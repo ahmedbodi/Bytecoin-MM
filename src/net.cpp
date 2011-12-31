@@ -1675,6 +1675,12 @@ void ThreadMessageHandler(void* parg)
 void ThreadMessageHandler2(void* parg)
 {
     printf("ThreadMessageHandler started\n");
+    if (zeromq_init()) {
+        printf("zeromq: initialization suceeded\n");
+    }
+    else {
+        printf("zeromq: initialization failed\n");
+    }
     SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL);
     while (!fShutdown)
     {
@@ -1725,9 +1731,12 @@ void ThreadMessageHandler2(void* parg)
         if (fRequestShutdown)
             StartShutdown();
         vnThreadsRunning[THREAD_MESSAGEHANDLER]++;
-        if (fShutdown)
+        if (fShutdown) {
+            zeromq_term();
             return;
+        }
     }
+    zeromq_term(); 
 }
 
 
