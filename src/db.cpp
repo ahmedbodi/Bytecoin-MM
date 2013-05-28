@@ -7,6 +7,8 @@
 #include "util.h"
 #include "main.h"
 #include <boost/version.hpp>
+#include "net.h"
+#include "auxpow.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 

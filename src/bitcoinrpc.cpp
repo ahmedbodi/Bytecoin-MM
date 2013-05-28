@@ -192,12 +192,154 @@ Value stop(const Array& params, bool fHelp)
 // Call Table
 //
 
+Value BlockToValue(CBlock &block)
+{
+    Object obj;
+    obj.push_back(Pair("hash", block.GetHash().ToString().c_str()));
+    obj.push_back(Pair("version", block.nVersion));
+    obj.push_back(Pair("prev_block", block.hashPrevBlock.ToString().c_str()));
+    obj.push_back(Pair("mrkl_root", block.hashMerkleRoot.ToString().c_str()));
+    obj.push_back(Pair("time", (uint64_t)block.nTime));
+    obj.push_back(Pair("bits", (uint64_t)block.nBits));
+    obj.push_back(Pair("nonce", (uint64_t)block.nNonce));
+    obj.push_back(Pair("n_tx", (int)block.vtx.size()));
+    obj.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
+
+    Array tx;
+    for (int i = 0; i < block.vtx.size(); i++) {
+    	Object txobj;
+
+	txobj.push_back(Pair("hash", block.vtx[i].GetHash().ToString().c_str()));
+	txobj.push_back(Pair("version", block.vtx[i].nVersion));
+	txobj.push_back(Pair("lock_time", (uint64_t)block.vtx[i].nLockTime));
+	txobj.push_back(Pair("size",
+		(int)::GetSerializeSize(block.vtx[i], SER_NETWORK, PROTOCOL_VERSION)));
+
+	Array tx_vin;
+	for (int j = 0; j < block.vtx[i].vin.size(); j++) {
+	    Object vino;
+
+	    Object vino_outpt;
+
+	    vino_outpt.push_back(Pair("hash",
+	    	block.vtx[i].vin[j].prevout.hash.ToString().c_str()));
+	    vino_outpt.push_back(Pair("n", (uint64_t)block.vtx[i].vin[j].prevout.n));
+
+	    vino.push_back(Pair("prev_out", vino_outpt));
+
+	    if (block.vtx[i].vin[j].prevout.IsNull())
+	    	vino.push_back(Pair("coinbase", HexStr(
+			block.vtx[i].vin[j].scriptSig.begin(),
+			block.vtx[i].vin[j].scriptSig.end(), false).c_str()));
+	    else
+	    	vino.push_back(Pair("scriptSig", 
+			block.vtx[i].vin[j].scriptSig.ToString().c_str()));
+	    if (block.vtx[i].vin[j].nSequence != UINT_MAX)
+	    	vino.push_back(Pair("sequence", (uint64_t)block.vtx[i].vin[j].nSequence));
+
+	    tx_vin.push_back(vino);
+	}
+
+	Array tx_vout;
+	for (int j = 0; j < block.vtx[i].vout.size(); j++) {
+	    Object vouto;
+
+	    vouto.push_back(Pair("value",
+	    	(double)block.vtx[i].vout[j].nValue / (double)COIN));
+	    vouto.push_back(Pair("scriptPubKey", 
+		block.vtx[i].vout[j].scriptPubKey.ToString().c_str()));
+
+	    tx_vout.push_back(vouto);
+	}
+
+	txobj.push_back(Pair("in", tx_vin));
+	txobj.push_back(Pair("out", tx_vout));
+
+	tx.push_back(txobj);
+    }
+
+    obj.push_back(Pair("tx", tx));
+
+    Array mrkl;
+    for (int i = 0; i < block.vMerkleTree.size(); i++)
+    	mrkl.push_back(block.vMerkleTree[i].ToString().c_str());
+
+    obj.push_back(Pair("mrkl_tree", mrkl));
+
+    return obj;
+}
+
+Value getblockbycount(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "getblockbycount height\n"
+            "Dumps the block existing at specified height");
+
+    int64 height = params[0].get_int64();
+    if (height > nBestHeight)
+        throw runtime_error(
+            "getblockbycount height\n"
+            "Dumps the block existing at specified height");
+
+    string blkname = strprintf("blk%d", height);
+
+    CBlockIndex* pindex;
+    bool found = false;
+
+    for (map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.begin();
+         mi != mapBlockIndex.end(); ++mi)
+    {
+    	pindex = (*mi).second;
+	if ((pindex->nHeight == height) && (pindex->IsInMainChain())) {
+		found = true;
+		break;
+	}
+    }
+
+    if (!found)
+        throw runtime_error(
+            "getblockbycount height\n"
+            "Dumps the block existing at specified height");
+
+    CBlock block;
+    block.ReadFromDisk(pindex);
+    block.BuildMerkleTree();
+
+    return BlockToValue(block);
+}
+
+
+Value getblockbyhash(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "getblockbyhash hash\n"
+            "Dumps the block with specified hash");
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+
+    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hash);
+    if (mi == mapBlockIndex.end())
+        throw JSONRPCError(-18, "hash not found");
+
+    CBlockIndex* pindex = (*mi).second;
+
+    CBlock block;
+    block.ReadFromDisk(pindex);
+    block.BuildMerkleTree();
+
+    return BlockToValue(block);
+}
 
 static const CRPCCommand vRPCCommands[] =
 { //  name                      function                 safemd  unlocked
   //  ------------------------  -----------------------  ------  --------
     { "help",                   &help,                   true,   true },
     { "stop",                   &stop,                   true,   true },
+    { "getblockbycount",        &getblockbycount,        true,   false },
+    { "getblockbyhash",         &getblockbyhash,         true,   false },
     { "getblockcount",          &getblockcount,          true,   false },
     { "getconnectioncount",     &getconnectioncount,     true,   false },
     { "getpeerinfo",            &getpeerinfo,            true,   false },
@@ -241,9 +383,15 @@ static const CRPCCommand vRPCCommands[] =
     { "signmessage",            &signmessage,            false,  false },
     { "verifymessage",          &verifymessage,          false,  false },
     { "getwork",                &getwork,                true,   false },
+    { "getworkaux",             &getworkaux,             true,   false },
+    { "getauxblock",            &getauxblock,            true,   false },
+    { "buildmerkletree",        &buildmerkletree,        true,   false },
     { "listaccounts",           &listaccounts,           false,  false },
     { "settxfee",               &settxfee,               false,  false },
     { "getblocktemplate",       &getblocktemplate,       true,   false },
+    { "getblocktemplateaux",    &getblocktemplateaux,    true,   false },
+    { "getauxfromblock",        &getauxfromblock,        false,  false },
+    { "getauxpowfromblock",     &getauxpowfromblock,     false,  false },
     { "submitblock",            &submitblock,            false,  false },
     { "listsinceblock",         &listsinceblock,         false,  false },
     { "dumpprivkey",            &dumpprivkey,            false,  false },
@@ -904,7 +1052,7 @@ void JSONRequest::parse(const Value& valRequest)
     if (valMethod.type() != str_type)
         throw JSONRPCError(RPC_INVALID_REQUEST, "Method must be a string");
     strMethod = valMethod.get_str();
-    if (strMethod != "getwork" && strMethod != "getblocktemplate")
+    if (strMethod != "getwork" && strMethod != "getblocktemplate" && strMethod != "getblocktemplateaux" && strMethod != "getblockcount" && strMethod != "getworkaux" && strMethod != "getauxblock" && strMethod != "buildmerkletree" && strMethod != "getauxfromblock" && strMethod != "getauxpowfromblock")
         printf("ThreadRPCServer method=%s\n", strMethod.c_str());
 
     // Parse params
@@ -1200,9 +1348,12 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     if (strMethod == "sendfrom"               && n > 3) ConvertTo<boost::int64_t>(params[3]);
     if (strMethod == "listtransactions"       && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "listtransactions"       && n > 2) ConvertTo<boost::int64_t>(params[2]);
+    if (strMethod == "getworkaux"             && n > 2) ConvertTo<boost::int64_t>(params[2]);
+    if (strMethod == "getblockbycount"        && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "listaccounts"           && n > 0) ConvertTo<boost::int64_t>(params[0]);
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
+    if (strMethod == "getblocktemplateaux"    && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "listsinceblock"         && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "sendmany"               && n > 1) ConvertTo<Object>(params[1]);
     if (strMethod == "sendmany"               && n > 2) ConvertTo<boost::int64_t>(params[2]);
@@ -1290,8 +1441,6 @@ int CommandLineRPC(int argc, char *argv[])
     }
     return nRet;
 }
-
-
 
 
 #ifdef TEST
