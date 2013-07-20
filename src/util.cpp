@@ -1012,6 +1012,7 @@ boost::filesystem::path GetDefaultDataDir()
     // Windows >= Vista: C:\Users\Username\AppData\Roaming\Bytecoin
     // Mac: ~/Library/Application Support/Bytecoin
     // Unix: ~/.bytecoin 
+#ifdef WIN32
     return GetSpecialFolderPath(CSIDL_APPDATA) / "Bytecoin";
 #else
     fs::path pathRet;
