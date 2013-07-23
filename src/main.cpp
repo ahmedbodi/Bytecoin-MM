@@ -1953,10 +1953,6 @@ bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew)
         boost::thread t(runCommand, strCmd); // thread runs free
     }
 
-    if (!IsInitialBlockDownload() && zeromq_newblock(nBestHeight)) {
-      printf("zeromq: new block notified: %d\n", nBestHeight);
-    }
-
     return true;
 }
 
